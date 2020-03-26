@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const { ApolloServer } = require('apollo-server-express');
 const { express: voyagerMiddleware } = require('graphql-voyager/middleware');
+const cors = require('cors');
 
 const typeDefs = require('./schema.js');
 const resolvers = require('./resolvers.js');
@@ -10,7 +11,13 @@ const resolvers = require('./resolvers.js');
 const server = new ApolloServer({ typeDefs, resolvers });
 
 const app = express();
-server.applyMiddleware({ app });
+
+app.options('*', cors());
+app.use(cors());
+
+server.applyMiddleware({
+  app,
+});
 
 app.use('/voyager', voyagerMiddleware({ endpointUrl: '/graphql' }));
 

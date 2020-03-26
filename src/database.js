@@ -26,4 +26,6 @@ function restartSqlConnection() {
   connection.on('error', handleSqlError);
 }
 
+restartSqlConnection();
+
 module.exports = connection;

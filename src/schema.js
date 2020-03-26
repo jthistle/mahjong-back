@@ -5,6 +5,11 @@ const typeDefs = gql`
   type Query {
     hello: String
   }
+
+  type Mutation {
+    "Create a user, returns nickname"
+    createUser(nickname: String!): String!
+  }
 `;
 
 module.exports = typeDefs;
