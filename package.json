@@ -6,7 +6,7 @@
   "author": "James Thistlewood",
   "license": "GPL-3.0",
   "scripts": {
-    "dev": "node src/index.js",
+    "dev": "nodemon src/index.js",
     "prettify": "prettier --write \"src/**/*.js\""
   },
   "dependencies": {
@@ -21,7 +21,8 @@
   "devDependencies": {
     "husky": "^4.2.3",
     "lint-staged": "^10.0.9",
-    "prettier": "^2.0.2"
+    "prettier": "^2.0.2",
+    "nodemon": "^2.0.2"
   },
   "husky": {
     "hooks": {
