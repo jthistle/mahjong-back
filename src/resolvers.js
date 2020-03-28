@@ -2,6 +2,24 @@ const crypto = require('crypto');
 const db = require('./database.js');
 const config = require('./config.js');
 
+/**
+ * Pads an array with a given string, returns a copy
+ */
+function padWithStrings(array, string, size) {
+  const newArray = [];
+  for (var i = 0; i < array.length; ++i) {
+    newArray.push(array[i]);
+  }
+
+  if (size <= array.length) return newArray;
+
+  for (var i = array.length; i < size; ++i) {
+    newArray.push(string);
+  }
+
+  return newArray;
+}
+
 function validateUserHash(hash) {
   return new Promise((resolve, reject) => {
     db.query(
@@ -18,6 +36,130 @@ function validateUserHash(hash) {
 const resolvers = {
   Query: {
     hello: () => 'Hello world!',
+    user: (parent, args, context, info) => {
+      return new Promise(async (resolve) => {
+        db.query(
+          'SELECT nickname FROM users WHERE hash = ?',
+          [args.userHash],
+          async function (error, results) {
+            if (results.length !== 1) {
+              return resolve(null);
+            }
+
+            const gameHash = await new Promise((resolveHash) => {
+              db.query(
+                'SELECT hash, players FROM games WHERE stage != 0',
+                function (error, results) {
+                  let foundGame = false;
+                  results.forEach((val) => {
+                    if (foundGame) return;
+                    if (JSON.parse(val.players).includes(args.userHash)) {
+                      resolveHash(val.hash);
+                      foundGame = true;
+                    }
+                  });
+                  if (!foundGame) {
+                    resolveHash(null);
+                  }
+                }
+              );
+            });
+
+            return resolve({
+              hash: args.userHash,
+              nickname: results[0].nick,
+              inGame: gameHash,
+            });
+          }
+        );
+      });
+    },
+    game: (parent, args, context, info) => {
+      return new Promise((resolve) => {
+        db.query(
+          'SELECT * FROM games WHERE hash = ?',
+          [args.gameHash],
+          async function (error, results) {
+            if (results.length !== 1) {
+              return resolve(null);
+            }
+
+            const game = results[0];
+            game.players = JSON.parse(game.players);
+
+            hashes = padWithStrings(game.players, '', 4);
+            const players = await new Promise((resolvePlayers) => {
+              // TODO: make this dependent on maxPlayers instead of being hardcoded
+              db.query(
+                'SELECT hash, nickname FROM users WHERE hash IN (?, ?, ?, ?)',
+                hashes,
+                function (error, results) {
+                  return resolvePlayers(results);
+                }
+              );
+            });
+
+            let myPosition = hashes.indexOf(args.userHash);
+            if (myPosition === -1) {
+              myPosition = null;
+            }
+
+            const nicknames = [];
+            game.players.forEach((hash) => {
+              let nickname;
+              for (let i = 0; i < players.length; i++) {
+                if (players[i].hash === hash) {
+                  nickname = players[i].nickname;
+                  break;
+                }
+              }
+              nicknames.push(nickname);
+            });
+
+            let stage;
+            switch (game.stage) {
+              case 0:
+                stage = 'FINISHED';
+                break;
+              case 1:
+                stage = 'PREGAME';
+                break;
+              case 2:
+                stage = 'PLAY';
+                break;
+            }
+
+            let declaredTiles = null;
+            let discardTiles = null;
+            let playerTiles = null;
+            let turn = null;
+            let east = null;
+            let startTime = null;
+            if (game.stage !== 1) {
+              declaredTiles = JSON.parse(game.declaredTiles);
+              discardTiles = JSON.parse(game.discardTiles);
+              playerTiles = JSON.parse(game.playerTiles);
+              turn = game.turn;
+              east = game.east;
+              startTime = game.startTime;
+            }
+
+            return resolve({
+              nicknames,
+              stage,
+              turn,
+              east,
+              declaredTiles,
+              discardTiles,
+              playerTiles,
+              myPosition,
+              startTime,
+              joinCode: game.joinCode,
+            });
+          }
+        );
+      });
+    },
   },
 
   Mutation: {
@@ -44,7 +186,6 @@ const resolvers = {
     joinGame: (parent, args, context, info) => {
       return new Promise(async (resolve, reject) => {
         if (!(await validateUserHash(args.userHash))) {
-          console.log('invalid user hash');
           return resolve(null);
         }
         db.query(
@@ -52,7 +193,6 @@ const resolvers = {
           [args.gameCode],
           (error, results) => {
             if (results.length !== 1) {
-              console.log('game not found');
               return resolve(null);
             }
 
@@ -61,7 +201,6 @@ const resolvers = {
             const players = JSON.parse(game.players);
             if (players.length >= config.maxPlayers) {
               /* TODO allow join to spectate? */
-              console.log('too many players');
               return resolve(null);
             } else if (!players.includes(args.userHash)) {
               players.push(args.userHash);
