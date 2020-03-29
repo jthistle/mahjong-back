@@ -1,12 +1,16 @@
 const { gql } = require('apollo-server-express');
 
 const typeDefs = gql`
+  scalar Timestamp
+
   type Query {
     hello: String
     "Get information about a given user"
     user(userHash: String!): User
-    "Get initial information about a game"
+    "Get meta information about a game"
     game(userHash: String!, gameHash: String!): Game
+    "Gets game events"
+    events(userHash: String!, gameHash: String!, offset: Int!): EventsResponse
   }
 
   type Mutation {
@@ -16,6 +20,12 @@ const typeDefs = gql`
     createGame(userHash: String!): String!
     "Join an existing game, returns game hash"
     joinGame(userHash: String!, gameCode: String!): String
+    "Attempt to send an event to the server, returns success"
+    sendEvent(
+      event: EventInput!
+      userHash: String!
+      gameCode: String!
+    ): Boolean!
   }
 
   type User {
@@ -30,6 +40,14 @@ const typeDefs = gql`
     PLAY
   }
 
+  "Players are referred to by index, starting at 0"
+  type Game {
+    joinCode: String!
+    nicknames: [String!]!
+    stage: GameStage!
+    myPosition: Int
+  }
+
   enum Suit {
     CIRCLES
     BAMBOO
@@ -40,6 +58,7 @@ const typeDefs = gql`
     SEASONS
   }
 
+  "A single tile"
   type Tile {
     "Coding for values: RGW are 123 respectively, ESWN are 1234"
     value: Int!
@@ -49,23 +68,60 @@ const typeDefs = gql`
   "A valid combination of tiles e.g. pung"
   type TileSet {
     tiles: [Tile!]!
+    "TODO: concealed"
+    concealed: Boolean
   }
 
-  "Players are referred to by index, starting at 0"
-  type Game {
-    joinCode: String!
-    nicknames: [String!]!
-    stage: GameStage!
-    turn: Int
-    east: Int
-    "An array of revealed tile sets for each player"
-    declaredTiles: [[TileSet!]!]
-    "Each player's own hidden tilse"
-    playerTiles: [[Tile!]!]
-    "Each player's discarded tiles"
-    discardTiles: [[Tile!]!]
-    myPosition: Int
-    startTime: Int
+  enum EventType {
+    "The round has started"
+    ROUND_START
+    "Set the east player, uses player"
+    SET_EAST
+    "Start a player's turn, uses player"
+    START_TURN
+    "A piece is picked up from the wall, uses tile, player"
+    PICKUP_WALL
+    "The last discard is picked up from the table, uses tile, player"
+    PICKUP_TABLE
+    "A piece is discarded to the table, uses tile, player"
+    DISCARD
+    "A combo is declared, uses tileSet, player"
+    DECLARE
+    "A player goes mahjong, uses player"
+    MAHJONG
+    "The round has ended"
+    ROUND_END
+    "The game finishes"
+    GAME_END
+  }
+
+  type Event {
+    type: EventType!
+    time: Timestamp!
+    tile: Tile
+    tileSet: TileSet
+    player: Int
+  }
+
+  type EventsResponse {
+    offset: Int!
+    events: [Event!]!
+  }
+
+  input EventInput {
+    type: EventType!
+    tile: TileInput
+    tileSet: TileSetInput
+  }
+
+  input TileInput {
+    value: Int!
+    suit: Suit!
+  }
+
+  input TileSetInput {
+    tiles: [TileInput!]!
+    concealed: Boolean
   }
 `;
 

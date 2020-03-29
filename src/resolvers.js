@@ -1,6 +1,12 @@
 const crypto = require('crypto');
+const { GraphQLScalarType } = require('graphql');
+const { Kind } = require('graphql/language');
+
 const db = require('./database.js');
 const config = require('./config.js');
+const gameManager = require('./gameManager.js');
+const gameCache = require('./gameCache.js');
+const gameModel = require('./gameModel.js');
 
 /**
  * Pads an array with a given string, returns a copy
@@ -33,6 +39,38 @@ function validateUserHash(hash) {
   });
 }
 
+/**
+ * Custom definition of a timestamp scalar type.
+ */
+const Timestamp = new GraphQLScalarType({
+  name: 'Timestamp',
+  description: 'A UNIX epoch timestamp in milliseconds',
+  /* Returning value to client */
+  serialize(value) {
+    if (value > Number.MAX_SAFE_INTEGER) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+    return value;
+  },
+  /* Value recieved from client */
+  parseValue(value) {
+    if (value > Number.MAX_SAFE_INTEGER) {
+      throw new Error('Value is greater than maximum safe integer!');
+    }
+    return value;
+  },
+  /* Parsing a literal in the schema */
+  parseLiteral(ast) {
+    if (ast.kind === Kind.INT) {
+      return new Number(ast.value);
+    }
+    return null;
+  },
+});
+
+/**
+ * The resolver map mega-object.
+ */
 const resolvers = {
   Query: {
     hello: () => 'Hello world!',
@@ -129,36 +167,48 @@ const resolvers = {
                 break;
             }
 
-            let declaredTiles = null;
-            let discardTiles = null;
-            let playerTiles = null;
-            let turn = null;
-            let east = null;
-            let startTime = null;
-            if (game.stage !== 1) {
-              declaredTiles = JSON.parse(game.declaredTiles);
-              discardTiles = JSON.parse(game.discardTiles);
-              playerTiles = JSON.parse(game.playerTiles);
-              turn = game.turn;
-              east = game.east;
-              startTime = game.startTime;
-            }
-
             return resolve({
               nicknames,
               stage,
-              turn,
-              east,
-              declaredTiles,
-              discardTiles,
-              playerTiles,
               myPosition,
-              startTime,
               joinCode: game.joinCode,
             });
           }
         );
       });
+    },
+    events: (parent, args, context, info) => {
+      const game = gameCache[args.gameHash];
+      if (!game) {
+        return null;
+      }
+
+      if (args.offset == game.lastEventId()) {
+        return {
+          offset: args.offset,
+          events: [],
+        };
+      }
+
+      userPlayerInd = game.playerId(args.userHash);
+      sanitisedEvents = [];
+      i = 0;
+      gameCache[args.gameHash].forEachEvent((event) => {
+        if (i++ <= args.offset) {
+          return;
+        }
+        if (event.type === 'PICKUP_WALL' && event.player !== userPlayerInd) {
+          return;
+        }
+
+        /* TODO check if this is safe without copy */
+        sanitisedEvents.push(event);
+      });
+
+      return {
+        offset: game.lastEventId(),
+        events: sanitisedEvents,
+      };
     },
   },
 
@@ -178,7 +228,10 @@ const resolvers = {
       const players = JSON.stringify([args.userHash]);
       db.query(
         'INSERT INTO games (hash, joinCode, players, stage) VALUES (?, ?, ?, 1)',
-        [hash, joinCode, players]
+        [hash, joinCode, players],
+        () => {
+          gameCache[hash] = gameModel(hash, players);
+        }
       );
 
       return hash;
@@ -204,10 +257,13 @@ const resolvers = {
               return resolve(null);
             } else if (!players.includes(args.userHash)) {
               players.push(args.userHash);
-              db.query('UPDATE games SET players = ? WHERE hash = ?', [
-                JSON.stringify(players),
-                game.hash,
-              ]);
+              db.query(
+                'UPDATE games SET players = ? WHERE hash = ?',
+                [JSON.stringify(players), game.hash],
+                () => {
+                  gameCache[game.hash].addPlayer(args.userHash);
+                }
+              );
             }
 
             return resolve(game.hash);
@@ -216,6 +272,8 @@ const resolvers = {
       });
     },
   },
+
+  Timestamp,
 };
 
 module.exports = resolvers;

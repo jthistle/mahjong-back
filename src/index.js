@@ -5,6 +5,7 @@ const { ApolloServer } = require('apollo-server-express');
 const { express: voyagerMiddleware } = require('graphql-voyager/middleware');
 const cors = require('cors');
 
+const gameManager = require('./gameManager.js');
 const typeDefs = require('./schema.js');
 const resolvers = require('./resolvers.js');
 
@@ -24,3 +25,5 @@ app.use('/voyager', voyagerMiddleware({ endpointUrl: '/graphql' }));
 app.listen({ port: 4000 }, () =>
   console.log(`Server ready at http://localhost:4000${server.graphqlPath}`)
 );
+
+gameManager.run();
