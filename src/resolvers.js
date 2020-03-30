@@ -48,7 +48,7 @@ const Timestamp = new GraphQLScalarType({
   /* Returning value to client */
   serialize(value) {
     if (value > Number.MAX_SAFE_INTEGER) {
-      return Number.MAX_SAFE_INTEGER;
+      throw new Error('Value is greater than maximum safe integer!');
     }
     return value;
   },
