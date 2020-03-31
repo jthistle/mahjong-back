@@ -301,6 +301,9 @@ function game(_hash, _players, _events) {
         if (turn !== playerInd) {
           return false;
         }
+        if (turnState !== TURN_STATE.waitingForDiscard) {
+          return false;
+        }
         if (!tileInSet(event.tile, hiddenTiles[playerInd])) {
           return false;
         }
@@ -346,6 +349,20 @@ function game(_hash, _players, _events) {
       player,
       tile: wallTiles[0],
     });
+  };
+
+  /**
+   * Move on to the next turn of the game.
+   */
+  const nextTurn = () => {
+    if (turnState !== TURN_STATE.waitingForClaims) {
+      return;
+    }
+    let newTurn = turn + 1;
+    if (newTurn >= players.length) {
+      newTurn = 0;
+    }
+    startTurn(newTurn);
   };
 
   /**
@@ -426,6 +443,7 @@ function game(_hash, _players, _events) {
 
   return {
     hash: () => hash,
+    locked: () => locked,
     lastEventId: () => lastEventId,
     playerId,
     addPlayer: (hash) => {
@@ -434,8 +452,10 @@ function game(_hash, _players, _events) {
     forEachEvent: (callback) => events.forEach(callback),
     addEvent: wrapExternal(addEvent),
     initNew: wrapExternal(initNew),
-    startTurn: wrapExternal(startTurn),
+    nextTurn: wrapExternal(nextTurn),
     userEvent: wrapExternal(userEvent),
+    timeSinceLastEvent: () => Date.now() - events[events.length - 1].time,
+    turnState: () => turnState,
   };
 }
 

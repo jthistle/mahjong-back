@@ -1,6 +1,7 @@
 const db = require('./database.js');
 const config = require('./config.js');
 const gameCache = require('./gameCache.js');
+const { TURN_STATE } = require('./const.js');
 
 const MIN_TIMEOUT = 500; /* ms */
 
@@ -29,6 +30,17 @@ function gameManager() {
           db.query('UPDATE games SET stage = 2 WHERE hash = ?', [game.hash]);
         }
       });
+
+      for (hash in gameCache) {
+        const game = gameCache[hash];
+        if (
+          game.turnState() === TURN_STATE.waitingForClaims &&
+          !game.locked() &&
+          game.timeSinceLastEvent() >= config.claimTime
+        ) {
+          game.nextTurn();
+        }
+      }
 
       await new Promise((resolve) =>
         setTimeout(resolve, MIN_TIMEOUT - (Date.now() - start))
