@@ -24,7 +24,7 @@ const typeDefs = gql`
     sendEvent(
       event: EventInput!
       userHash: String!
-      gameCode: String!
+      gameHash: String!
     ): Boolean!
   }
 

@@ -271,6 +271,13 @@ const resolvers = {
         );
       });
     },
+    sendEvent: (parent, args, context, info) => {
+      const game = gameCache[args.gameHash];
+      if (!game) {
+        return false;
+      }
+      return game.userEvent(args.event, args.userHash);
+    },
   },
 
   Timestamp,
