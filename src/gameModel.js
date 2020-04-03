@@ -53,6 +53,10 @@ function game(_hash, _players, _events) {
   const discardTiles = [];
   const declaredTiles = [];
 
+  for (let i = 0; i < players.length; ++i) {
+    declaredTiles.push([]);
+  }
+
   const playerId = (hash) => players.indexOf(hash);
 
   /**
@@ -89,7 +93,7 @@ function game(_hash, _players, _events) {
   };
 
   const areInRow = (...tiles) => {
-    tiles.sorted((a, b) => {
+    tiles.sort((a, b) => {
       return a.value - b.value;
     });
     let last = tiles[0].value;
@@ -227,6 +231,32 @@ function game(_hash, _players, _events) {
   };
 
   /**
+   * Start a player's turn. `player` should be a player index.
+   */
+  const startTurn = (player) => {
+    if (wallTiles.length === 0) {
+      addEvent({
+        type: EVENT.gameEnd,
+        time: Date.now(),
+      });
+      return;
+    }
+
+    addEvent({
+      type: EVENT.startTurn,
+      time: Date.now(),
+      player,
+    });
+
+    addEvent({
+      type: EVENT.pickupWall,
+      time: Date.now(),
+      player,
+      tile: wallTiles[0],
+    });
+  };
+
+  /**
    * Determine whether a user event can be validly accepted, and, if it can,
    * add it to the events list.
    */
@@ -263,8 +293,16 @@ function game(_hash, _players, _events) {
         }
         /* The tile set being declared must be a pung, kong, or chow */
         if (
-          !areSameTile(...tileSet) &&
-          !(areSameSuit(...tileSet) && areInRow(...tileSet))
+          !(
+            areSameTile(...tileSet) &&
+            (tileSet.length === 3 || tileSet.length === 4)
+          ) &&
+          !(
+            areSameSuit(...tileSet) &&
+            areInRow(...tileSet) &&
+            tileSet.length === 3 &&
+            playerInd === (turn + 1) % players.length
+          )
         ) {
           return false;
         }
@@ -276,6 +314,10 @@ function game(_hash, _players, _events) {
         if (chosen !== null && chosen !== event.tile.suit) {
           return false;
         }
+
+        const declaredSet = cloneDeep(event.tileSet);
+        declaredSet.tiles.sort((a, b) => a.value - b.value);
+
         addEvent({
           type: EVENT.pickupTable,
           time: Date.now(),
@@ -288,8 +330,20 @@ function game(_hash, _players, _events) {
           type: EVENT.declare,
           time: Date.now(),
           player: playerInd,
-          tileSet: cloneDeep(event.tileSet),
+          tileSet: declaredSet,
         });
+
+        if (event.tileSet.length === 4) {
+          /* Kong, player must pick up again before discarding */
+          startTurn(playerInd);
+        } else {
+          /* Otherwise, a simple discard is needed */
+          addEvent({
+            type: EVENT.startTurn,
+            time: Date.now(),
+            player: playerInd,
+          });
+        }
         return true;
       /**
        * A discard is a lot simpler to validate.
@@ -323,32 +377,6 @@ function game(_hash, _players, _events) {
         /* Most event types cannot be sent by the user */
         return false;
     }
-  };
-
-  /**
-   * Start a player's turn. `player` should be a player index.
-   */
-  const startTurn = (player) => {
-    if (wallTiles.length === 0) {
-      addEvent({
-        type: EVENT.gameEnd,
-        time: Date.now(),
-      });
-      return;
-    }
-
-    addEvent({
-      type: EVENT.startTurn,
-      time: Date.now(),
-      player,
-    });
-
-    addEvent({
-      type: EVENT.pickupWall,
-      time: Date.now(),
-      player,
-      tile: wallTiles[0],
-    });
   };
 
   /**
@@ -405,7 +433,7 @@ function game(_hash, _players, _events) {
   }
 
   ['CIRCLES', 'BAMBOO', 'CHARACTERS'].forEach((suit, i) => {
-    for (let i = 1; i <= 10; ++i) {
+    for (let i = 1; i <= 9; ++i) {
       for (let j = 1; j <= 4; ++j) {
         wallTiles.push({
           suit,
