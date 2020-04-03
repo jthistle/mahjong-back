@@ -20,6 +20,9 @@ function shuffle(a) {
   return a;
 }
 
+/**
+ * Helper function. Moves a tile from source array to a destination array.
+ */
 function moveTile(src, dest, tile) {
   let ind = null;
   src.some((srcTile, i) => {
@@ -27,6 +30,7 @@ function moveTile(src, dest, tile) {
       ind = i;
       return true;
     }
+    return false;
   });
 
   if (ind === null) {
@@ -39,6 +43,11 @@ function moveTile(src, dest, tile) {
   return true;
 }
 
+/**
+ * The game model handles caching game state, processing the event queue,
+ * writing events to the database, validating user events, and starting new
+ * turns and games.
+ */
 function game(_hash, _players, _events) {
   const hash = _hash;
   let locked = false;
@@ -63,15 +72,6 @@ function game(_hash, _players, _events) {
    * Tile comparison functions.
    */
   const areSameSuit = (...tiles) => {
-    for (let i = 1; i < tiles.length; ++i) {
-      if (tiles[i].suit !== tiles[i - 1].suit) {
-        return false;
-      }
-    }
-    return true;
-  };
-
-  const areSameValue = (...tiles) => {
     for (let i = 1; i < tiles.length; ++i) {
       if (tiles[i].suit !== tiles[i - 1].suit) {
         return false;
@@ -143,16 +143,25 @@ function game(_hash, _players, _events) {
         ) {
           continue;
         }
+        if (suit === null) {
+          suit = declared[i][j].suit;
+        }
         if (declared[i][j].suit !== suit) {
           /* mixed hand, TODO handle */
           return null;
         }
-        if (suit === null) {
-          suit = declared[i][j].suit;
-        }
       }
     }
     return suit;
+  };
+
+  /**
+   * Check if a declared hand has a chow in it.
+   */
+  const alreadyHasChow = (declared) => {
+    return declared.some((tileSet) => {
+      return tileSet[0].value !== tileSet[1].value;
+    });
   };
 
   /**
@@ -183,7 +192,7 @@ function game(_hash, _players, _events) {
         event.tileSet.tiles.forEach((tile) => {
           moveTile(hiddenTiles[event.player], tempTileSet, tile);
         });
-        declaredTiles.push(tempTileSet);
+        declaredTiles[event.player].push(tempTileSet);
         break;
     }
   };
@@ -301,7 +310,8 @@ function game(_hash, _players, _events) {
             areSameSuit(...tileSet) &&
             areInRow(...tileSet) &&
             tileSet.length === 3 &&
-            playerInd === (turn + 1) % players.length
+            playerInd === (turn + 1) % players.length &&
+            !alreadyHasChow(declaredTiles[playerInd])
           )
         ) {
           return false;
