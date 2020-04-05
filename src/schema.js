@@ -101,6 +101,7 @@ const typeDefs = gql`
     tile: Tile
     tileSet: TileSet
     player: Int
+    extra: String
   }
 
   type EventsResponse {

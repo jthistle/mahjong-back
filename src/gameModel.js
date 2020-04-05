@@ -34,7 +34,7 @@ function moveTile(src, dest, tile) {
   });
 
   if (ind === null) {
-    console.error("Can't find tile in source tiles!");
+    console.error("Can't find tile", tile, 'in source tiles!');
     return false;
   }
 
@@ -207,6 +207,21 @@ function game(_hash, _players, _events) {
   };
 
   /**
+   * Helper function for declaring a combo.
+   */
+  const declareCombo = (tiles, player, concealed = false) => {
+    addEvent({
+      type: EVENT.declare,
+      time: Date.now(),
+      player,
+      tileSet: {
+        tiles,
+        concealed,
+      },
+    });
+  };
+
+  /**
    * Update the database with the current events array.
    */
   const updateDatabase = (callback) => {
@@ -240,9 +255,40 @@ function game(_hash, _players, _events) {
   };
 
   /**
-   * Start a player's turn. `player` should be a player index.
+   * Finds pungs and kongs in a player's hidden tiles.
    */
-  const startTurn = (player) => {
+  const findPungsKongs = (player) => {
+    const tiles = hiddenTiles[player];
+    const pungs = [];
+    const kongs = [];
+    for (let i = 0; i < tiles.length - 3; ++i) {
+      let count = 0;
+      for (let j = i + 1; j < tiles.length; ++j) {
+        if (areSameTile(tiles[i], tiles[j])) {
+          count += 1;
+          if (count === 4) {
+            break;
+          }
+        }
+      }
+      if (count === 3 || count === 4) {
+        const modArray = count === 3 ? pungs : kongs;
+        if (modArray.some((tile) => areSameTile(tile, tiles[i]))) {
+          continue;
+        }
+        modArray.push(tiles[i]);
+      }
+    }
+    return {
+      pungs,
+      kongs,
+    };
+  };
+
+  /**
+   * Pickup from the wall, if possible.
+   */
+  const doPickup = (player) => {
     if (wallTiles.length === 0) {
       addEvent({
         type: EVENT.gameEnd,
@@ -252,17 +298,190 @@ function game(_hash, _players, _events) {
     }
 
     addEvent({
-      type: EVENT.startTurn,
-      time: Date.now(),
-      player,
-    });
-
-    addEvent({
       type: EVENT.pickupWall,
       time: Date.now(),
       player,
       tile: wallTiles[0],
     });
+
+    checkKongs(player);
+  };
+
+  /**
+   * Checks a player's hand for kongs, declaring them if found, and picking up.
+   */
+  const checkKongs = (player) => {
+    const { kongs } = findPungsKongs(player);
+
+    if (kongs.length === 0) {
+      return;
+    }
+
+    const suit = chosenSuit(declaredTiles[player]);
+    let ind = -1;
+    if (suit !== null) {
+      for (let i = 0; i < kongs.length; ++i) {
+        if (kongs[i].suit === suit) {
+          ind = i;
+          break;
+        }
+      }
+      /* There isn't a kong in the right suit to declare, so end. */
+      if (ind === -1) {
+        return;
+      }
+    } else {
+      ind = 0;
+    }
+
+    declareCombo(Array(4).fill({ ...kongs[ind] }), player, true);
+
+    doPickup(player);
+  };
+
+  /**
+   * Start a player's turn. `player` should be a player index.
+   */
+  const startTurn = (player) => {
+    addEvent({
+      type: EVENT.startTurn,
+      time: Date.now(),
+      player,
+    });
+
+    doPickup(player);
+  };
+
+  /**
+   * Checks for a chow and a pair in the tiles array passed. Returns the pair
+   * and the chow.
+   */
+  const checkChowAndPair = (tiles) => {
+    const tempTiles = cloneDeep(tiles);
+    let pairedTile = null;
+    for (let i = 0; i < tempTiles.length - 1; ++i) {
+      for (let j = i + 1; j < tempTiles; ++j) {
+        if (areSameTile(tempTiles[i], tempTiles[j])) {
+          pairedTile = tempTiles[j];
+          tempTiles.splice(j, 1);
+          tempTiles.splice(i, 1);
+          break;
+        }
+      }
+    }
+    if (pairedTile !== null && areInRow(...tempTiles)) {
+      tempTiles.sort((a, b) => a.value - b.value);
+      const pair = Array(2).fill(pairedTile);
+      return {
+        pair,
+        chow: tempTiles,
+      };
+    }
+    return false;
+  };
+
+  /**
+   * Check a player's declared and hidden tiles for a mahjong.
+   */
+  const checkMahjong = (player, usingDiscard) => {
+    console.log('checking mahjong');
+    const chosen = chosenSuit(declaredTiles[player]);
+    const remaining = cloneDeep(hiddenTiles[player]);
+    const checkable = ['BAMBOO', 'CHARACTERS', 'CIRCLES'];
+    const sameSuit = remaining.every(
+      (tile) => !checkable.includes(tile.suit) || tile.suit === chosen
+    );
+
+    /**
+     * When declaring a the tile sets for a mahjong, pickupLastPiece must be
+     * called before any calls to declareCombo.
+     */
+    let pickupLastPiece = () => {};
+    if (usingDiscard) {
+      remaining.push({ ...discardTiles[discardTiles.length - 1] });
+      pickupLastPiece = () =>
+        addEvent({
+          type: EVENT.pickupTable,
+          time: Date.now(),
+          player,
+          tile: { ...discardTiles[discardTiles.length - 1] },
+        });
+    }
+
+    const declaredChow = declaredTiles[player].some((tileSet) => {
+      return areInRow(...tileSet);
+    });
+
+    /**
+     * If they're the same suit, we can check for:
+     *   - a standard hand: this comprises pungs/kongs and optionally a single chow, all of the same
+     *     suit, optionally plus pungs/kongs of winds and/or dragons, plus a single pair of the same suit
+     *     as the rest of the hand.
+     */
+    if (sameSuit) {
+      if (remaining.length === 5 && !declaredChow) {
+        /**
+         * Special case: check for a chow and a pair. We need to do this in case there is
+         * a hand like 1BA 1BA 1BA 2BA 3BA, which would have the 'pung' taken out of it by
+         * the following algorithm.
+         */
+        const result = checkChowAndPair(remaining);
+        if (result) {
+          console.log('yes 1');
+          pickupLastPiece();
+          declareCombo(result.pair, player);
+          declareCombo(result.chow, player);
+          return true;
+        }
+      }
+      /* First check for pungs in the hidden hand (all kongs should have already been declared) */
+      const { pungs } = findPungsKongs(player);
+      pungs.forEach((pungedTile) => {
+        const toSplice = [];
+        remaining.forEach((tile, i) => {
+          if (areSameTile(tile, pungedTile)) {
+            toSplice.push(i);
+          }
+        });
+        /* reverse */
+        toSplice.sort((a, b) => b - a);
+        toSplice.forEach((ind) => {
+          remaining.splice(ind, 1);
+        });
+      });
+      /* Now we've gotten rid of punged tiles, check for a pair (and possibly a chow) */
+      if (remaining.length === 5) {
+        if (declaredChow) {
+          console.log('no 1');
+          /* Can't have more than one chow */
+          return false;
+        }
+        const result = checkChowAndPair(remaining);
+        if (result) {
+          console.log('yes 2');
+          pickupLastPiece();
+          pungs.forEach((pungedTile) => {
+            declareCombo(Array(3).fill(pungedTile), player, true);
+          });
+          declareCombo(result.pair, player);
+          declareCombo(result.chow, player);
+          return true;
+        }
+      } else if (remaining.length === 2) {
+        if (areSameTile(...remaining)) {
+          console.log('yes 3');
+          pickupLastPiece();
+          declareCombo(remaining, player);
+          return true;
+        }
+      } else {
+        /**
+         * TODO special hands
+         */
+      }
+    }
+    console.log('no end');
+    return false;
   };
 
   /**
@@ -321,7 +540,11 @@ function game(_hash, _players, _events) {
          * in some special hands (TODO).
          */
         const chosen = chosenSuit(declaredTiles[playerInd]);
-        if (chosen !== null && chosen !== event.tile.suit) {
+        if (
+          chosen !== null &&
+          chosen !== event.tile.suit &&
+          ['BAMBOO', 'CIRCLES', 'CHARACTERS'].includes(event.tile.suit)
+        ) {
           return false;
         }
 
@@ -381,8 +604,28 @@ function game(_hash, _players, _events) {
         });
         return true;
       case EVENT.mahjong:
-        // TODO
-        return true;
+        let result = false;
+        if (turn === playerInd && turnState === TURN_STATE.waitingForDiscard) {
+          result = checkMahjong(playerInd, false);
+        } else if (
+          turn !== playerInd &&
+          turnState === TURN_STATE.waitingForClaims
+        ) {
+          result = checkMahjong(playerInd, true);
+        }
+        if (result) {
+          addEvent({
+            type: EVENT.mahjong,
+            player: playerInd,
+            time: Date.now(),
+          });
+          addEvent({
+            type: EVENT.gameEnd,
+            time: Date.now(),
+          });
+          return true;
+        }
+        return false;
       default:
         /* Most event types cannot be sent by the user */
         return false;
