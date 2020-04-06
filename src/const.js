@@ -19,7 +19,21 @@ const EVENT = {
   gameEnd: 'GAME_END',
 };
 
+const GAME_STAGE = {
+  pregame: 'PREGAME',
+  play: 'PLAY',
+  finished: 'FINISHED',
+};
+
+const GAME_STAGE_TO_INT = {
+  PREGAME: 1,
+  PLAY: 2,
+  FINISHED: 0,
+};
+
 module.exports = {
   TURN_STATE,
   EVENT,
+  GAME_STAGE,
+  GAME_STAGE_TO_INT,
 };

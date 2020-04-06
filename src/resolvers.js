@@ -4,9 +4,9 @@ const { Kind } = require('graphql/language');
 
 const db = require('./database.js');
 const config = require('./config.js');
-const gameManager = require('./gameManager.js');
 const gameCache = require('./gameCache.js');
 const gameModel = require('./gameModel.js');
+const { GAME_STAGE } = require('./const.js');
 
 /**
  * Pads an array with a given string, returns a copy
@@ -230,7 +230,7 @@ const resolvers = {
         'INSERT INTO games (hash, joinCode, players, stage) VALUES (?, ?, ?, 1)',
         [hash, joinCode, players],
         () => {
-          gameCache[hash] = gameModel(hash, players);
+          gameCache[hash] = gameModel(hash, players, GAME_STAGE.pregame);
         }
       );
 
@@ -269,6 +269,23 @@ const resolvers = {
             return resolve(game.hash);
           }
         );
+      });
+    },
+    setReady: (parent, args, context, info) => {
+      const game = gameCache[args.gameHash];
+      if (!game) {
+        return false;
+      }
+      return game.playerSetReady(args.userHash, args.ready);
+    },
+    leaveGame: (parent, args, context, info) => {
+      return new Promise(async (resolve, reject) => {
+        const game = gameCache[args.gameHash];
+        if (!game) {
+          return resolve(false);
+        }
+        game.playerLeaveGame(args.userHash);
+        return resolve(true);
       });
     },
     sendEvent: (parent, args, context, info) => {

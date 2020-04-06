@@ -20,6 +20,10 @@ const typeDefs = gql`
     createGame(userHash: String!): String!
     "Join an existing game, returns game hash"
     joinGame(userHash: String!, gameCode: String!): String
+    "Tell the server that the user is ready to begin"
+    setReady(ready: Boolean!, userHash: String!, gameHash: String!): Boolean
+    "Leave a game"
+    leaveGame(userHash: String!, gameHash: String!): Boolean
     "Attempt to send an event to the server, returns success"
     sendEvent(
       event: EventInput!
@@ -91,7 +95,7 @@ const typeDefs = gql`
     MAHJONG
     "The round has ended"
     ROUND_END
-    "The game finishes"
+    "The game has finished"
     GAME_END
   }
 

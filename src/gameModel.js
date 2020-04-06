@@ -2,7 +2,12 @@ const cloneDeep = require('clone-deep');
 
 const db = require('./database.js');
 const config = require('./config.js');
-const { TURN_STATE, EVENT } = require('./const.js');
+const {
+  TURN_STATE,
+  EVENT,
+  GAME_STAGE,
+  GAME_STAGE_TO_INT,
+} = require('./const.js');
 
 /**
  * Shuffles array in place.
@@ -48,25 +53,51 @@ function moveTile(src, dest, tile) {
  * writing events to the database, validating user events, and starting new
  * turns and games.
  */
-function game(_hash, _players, _events) {
+function game(_hash, _players, _gameStage, _events) {
   const hash = _hash;
   let locked = false;
-  const events = _events ? cloneDeep(_events) : [];
+  let events = _events ? cloneDeep(_events) : [];
   let lastEventId = -1;
-  let east = 0;
+  let east = -1;
   let turn = 0;
   let turnState = null;
+  let gameStage = _gameStage;
   const players = cloneDeep(_players);
-  const wallTiles = [];
-  const hiddenTiles = [];
-  const discardTiles = [];
-  const declaredTiles = [];
-
-  for (let i = 0; i < players.length; ++i) {
-    declaredTiles.push([]);
-  }
+  let readyPlayers = Array(players.length).fill(false);
+  let wallTiles = [];
+  let hiddenTiles = [];
+  let discardTiles = [];
+  let declaredTiles = [];
 
   const playerId = (hash) => players.indexOf(hash);
+
+  /**
+   * Let a player leave the game, by ending it.
+   */
+  const playerLeaveGame = (playerHash) => {
+    addEvent({
+      type: EVENT.gameEnd,
+      time: Date.now(),
+      extra: 'A player left the game',
+    });
+    updateDatabase();
+  };
+
+  /**
+   * Set whether a player is ready to begin a new round.
+   */
+  const playerSetReady = (playerHash, isReady) => {
+    if (players.indexOf(playerHash) !== -1) {
+      readyPlayers[players.indexOf(playerHash)] = isReady;
+      return true;
+    }
+    return false;
+  };
+
+  /**
+   * Returns whether all players are ready for a new round to begin.
+   */
+  const playersReady = () => readyPlayers.every((ready) => ready);
 
   /**
    * Tile comparison functions.
@@ -119,19 +150,6 @@ function game(_hash, _players, _events) {
   };
 
   /**
-   * Counts the occurences of `tile` in `set`.
-   */
-  const countTilesInSet = (tile, set) => {
-    let count = 0;
-    for (let i = 0; i < set.length; ++i) {
-      if (areSameTile(set[i], tile)) {
-        count += 1;
-      }
-    }
-    return count;
-  };
-
-  /**
    * Gets the chosen suit in a declared set.
    */
   const chosenSuit = (declared) => {
@@ -170,6 +188,9 @@ function game(_hash, _players, _events) {
    */
   const processEvent = (event) => {
     switch (event.type) {
+      case EVENT.roundStart:
+        gameStage = GAME_STAGE.play;
+        break;
       case EVENT.setEast:
         east = event.player;
         break;
@@ -193,6 +214,13 @@ function game(_hash, _players, _events) {
           moveTile(hiddenTiles[event.player], tempTileSet, tile);
         });
         declaredTiles[event.player].push(tempTileSet);
+        break;
+      case EVENT.roundEnd:
+        /* Return to pregame once a round has ended */
+        gameStage = GAME_STAGE.pregame;
+        break;
+      case EVENT.gameEnd:
+        gameStage = GAME_STAGE.finished;
         break;
     }
   };
@@ -222,12 +250,12 @@ function game(_hash, _players, _events) {
   };
 
   /**
-   * Update the database with the current events array.
+   * Update the database with the current events array and game stage.
    */
   const updateDatabase = (callback) => {
     db.query(
-      'UPDATE games SET events = ? WHERE hash = ?',
-      [JSON.stringify(events), hash],
+      'UPDATE games SET stage = ?, events = ? WHERE hash = ?',
+      [GAME_STAGE_TO_INT[gameStage], JSON.stringify(events), hash],
       (error, results) => {
         locked = false;
         if (callback) callback();
@@ -237,7 +265,10 @@ function game(_hash, _players, _events) {
 
   /**
    * Wraps a function which changes the events log to make it thread-safe for external
-   * access.
+   * access. Any function wrapped in this will:
+   *   - not be run if the game mutex is locked
+   *   - return a promise
+   *   - resolve only after the events array has be written to the database
    */
   const wrapExternal = (func) => {
     return (...args) => {
@@ -291,7 +322,7 @@ function game(_hash, _players, _events) {
   const doPickup = (player) => {
     if (wallTiles.length === 0) {
       addEvent({
-        type: EVENT.gameEnd,
+        type: EVENT.roundEnd,
         time: Date.now(),
       });
       return;
@@ -335,19 +366,6 @@ function game(_hash, _players, _events) {
     }
 
     declareCombo(Array(4).fill({ ...kongs[ind] }), player, true);
-
-    doPickup(player);
-  };
-
-  /**
-   * Start a player's turn. `player` should be a player index.
-   */
-  const startTurn = (player) => {
-    addEvent({
-      type: EVENT.startTurn,
-      time: Date.now(),
-      player,
-    });
 
     doPickup(player);
   };
@@ -603,6 +621,9 @@ function game(_hash, _players, _events) {
           },
         });
         return true;
+      /**
+       * Most mahjong event checking is done in `checkMahjong`.
+       */
       case EVENT.mahjong:
         let result = false;
         if (turn === playerInd && turnState === TURN_STATE.waitingForDiscard) {
@@ -620,7 +641,7 @@ function game(_hash, _players, _events) {
             time: Date.now(),
           });
           addEvent({
-            type: EVENT.gameEnd,
+            type: EVENT.roundEnd,
             time: Date.now(),
           });
           return true;
@@ -630,6 +651,19 @@ function game(_hash, _players, _events) {
         /* Most event types cannot be sent by the user */
         return false;
     }
+  };
+
+  /**
+   * Start a player's turn. `player` should be a player index.
+   */
+  const startTurn = (player) => {
+    addEvent({
+      type: EVENT.startTurn,
+      time: Date.now(),
+      player,
+    });
+
+    doPickup(player);
   };
 
   /**
@@ -647,10 +681,20 @@ function game(_hash, _players, _events) {
   };
 
   /**
-   * Start a game. We need to deal 13 tiles for each player, then select a player
+   * Starts a new game round. We need to deal 13 tiles for each player, then select a player
    * to go first (i.e. be East).
    */
-  const initNew = () => {
+  const newRound = () => {
+    events = [];
+    lastEventId = -1;
+    wallTiles = [];
+    hiddenTiles = [];
+    discardTiles = [];
+    declaredTiles = [];
+    readyPlayers = Array(players.length).fill(false);
+
+    initWall();
+
     addEvent({
       type: EVENT.roundStart,
       time: Date.now(),
@@ -670,73 +714,89 @@ function game(_hash, _players, _events) {
     addEvent({
       type: EVENT.setEast,
       time: Date.now(),
-      player: Math.floor(Math.random() * 4),
+      player:
+        east === -1
+          ? Math.floor(Math.random() * 4)
+          : (east + 1) % players.length,
     });
 
     startTurn(east);
-
-    updateDatabase();
   };
 
   /**
-   * Construct. Begin by initing wall, then read events if any.
+   * Fill the wall with tiles, and randomize.
    */
-  for (let i = 0; i < config.maxPlayers; ++i) {
-    hiddenTiles.push([]);
-  }
+  const initWall = () => {
+    for (let i = 0; i < config.maxPlayers; ++i) {
+      hiddenTiles.push([]);
+      declaredTiles.push([]);
+    }
 
-  ['CIRCLES', 'BAMBOO', 'CHARACTERS'].forEach((suit, i) => {
-    for (let i = 1; i <= 9; ++i) {
+    ['CIRCLES', 'BAMBOO', 'CHARACTERS'].forEach((suit, i) => {
+      for (let i = 1; i <= 9; ++i) {
+        for (let j = 1; j <= 4; ++j) {
+          wallTiles.push({
+            suit,
+            value: i,
+          });
+        }
+      }
+    });
+
+    for (let i = 1; i <= 4; ++i) {
       for (let j = 1; j <= 4; ++j) {
         wallTiles.push({
-          suit,
+          suit: 'WINDS',
           value: i,
         });
       }
     }
-  });
 
-  for (let i = 1; i <= 4; ++i) {
-    for (let j = 1; j <= 4; ++j) {
-      wallTiles.push({
-        suit: 'WINDS',
-        value: i,
-      });
+    for (let i = 1; i <= 3; ++i) {
+      for (let j = 1; j <= 4; ++j) {
+        wallTiles.push({
+          suit: 'DRAGONS',
+          value: i,
+        });
+      }
     }
-  }
 
-  for (let i = 1; i <= 3; ++i) {
-    for (let j = 1; j <= 4; ++j) {
-      wallTiles.push({
-        suit: 'DRAGONS',
-        value: i,
-      });
-    }
-  }
+    shuffle(wallTiles);
+  };
 
-  shuffle(wallTiles);
-
+  /**
+   * Contruction. Read events, if any.
+   */
   if (events.length !== 0) {
+    initWall();
     events.forEach((ev) => processEvent(ev));
     lastEventId = events.length - 1;
     updateDatabase();
   }
 
   return {
+    /* Getters for private variables */
     hash: () => hash,
     locked: () => locked,
+    turnState: () => turnState,
+    gameStage: () => gameStage,
+    /* Methods relating to events */
+    forEachEvent: (callback) => events.forEach(callback),
     lastEventId: () => lastEventId,
+    timeSinceLastEvent: () => Date.now() - events[events.length - 1].time,
+    userEvent: wrapExternal(userEvent),
+    /* Methods relating to players */
     playerId,
     addPlayer: (hash) => {
       players.length < config.maxPlayers && players.push(hash);
     },
-    forEachEvent: (callback) => events.forEach(callback),
-    addEvent: wrapExternal(addEvent),
-    initNew: wrapExternal(initNew),
+    playerCount: () => players.length,
+    playerSetReady,
+    playerLeaveGame,
+    playersReady,
+    /* Methods relating to game flow control, for use by game manager */
+    newRound: wrapExternal(newRound),
     nextTurn: wrapExternal(nextTurn),
-    userEvent: wrapExternal(userEvent),
-    timeSinceLastEvent: () => Date.now() - events[events.length - 1].time,
-    turnState: () => turnState,
   };
 }
 

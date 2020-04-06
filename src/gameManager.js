@@ -1,10 +1,11 @@
 const db = require('./database.js');
 const config = require('./config.js');
 const gameCache = require('./gameCache.js');
-const { TURN_STATE } = require('./const.js');
+const { TURN_STATE, GAME_STAGE } = require('./const.js');
 
 const MIN_TIMEOUT = 500; /* ms */
 
+/**
 function syncQuery(query, params) {
   return new Promise((resolve) => {
     db.query(query, params, (error, results) => {
@@ -12,28 +13,24 @@ function syncQuery(query, params) {
     });
   });
 }
+*/
 
 function gameManager() {
   const run = async () => {
     while (true) {
       const start = Date.now();
 
-      const waitingGames = await syncQuery(
-        'SELECT hash, players FROM games WHERE stage = 1',
-        []
-      );
-
-      waitingGames.forEach((game) => {
-        const players = JSON.parse(game.players);
-        if (players.length === config.maxPlayers) {
-          gameCache[game.hash].initNew();
-          db.query('UPDATE games SET stage = 2 WHERE hash = ?', [game.hash]);
-        }
-      });
-
       for (hash in gameCache) {
         const game = gameCache[hash];
-        if (
+
+        if (game.gameStage() === GAME_STAGE.pregame) {
+          if (game.playerCount() === config.maxPlayers && game.playersReady()) {
+            game.newRound();
+          }
+        } else if (game.gameStage() === GAME_STAGE.finished) {
+          /* Remove game from cache if it is finished */
+          gameCache[hash] = undefined;
+        } else if (
           game.turnState() === TURN_STATE.waitingForClaims &&
           !game.locked() &&
           game.timeSinceLastEvent() >= config.claimTime
