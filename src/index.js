@@ -27,8 +27,7 @@ server.applyMiddleware({
 
 app.use('/voyager', voyagerMiddleware({ endpointUrl: '/graphql' }));
 
-app.listen({ port: process.env.PORT || 4000 }, () =>
-  console.log(`Server ready!`)
-);
+const port = process.env.PORT || 4000;
+app.listen({ port }, () => console.log(`Server ready on port ${port}!`));
 
 gameManager.run();
