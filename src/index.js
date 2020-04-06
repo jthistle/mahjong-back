@@ -4,6 +4,7 @@ const express = require('express');
 const { ApolloServer } = require('apollo-server-express');
 const { express: voyagerMiddleware } = require('graphql-voyager/middleware');
 const cors = require('cors');
+const path = require('path');
 
 const gameManager = require('./gameManager.js');
 const typeDefs = require('./schema.js');
