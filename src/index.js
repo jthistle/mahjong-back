@@ -10,7 +10,11 @@ const gameManager = require('./gameManager.js');
 const typeDefs = require('./schema.js');
 const resolvers = require('./resolvers.js');
 
-const server = new ApolloServer({ typeDefs, resolvers });
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  introspection: true,
+});
 
 const app = express();
 
@@ -18,7 +22,11 @@ app.options('*', cors());
 app.use(cors());
 
 if (process.env.NODE_ENV === 'production') {
+  console.log('In production, serving from static');
   app.use(express.static(path.join(__dirname, 'client/build')));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname + '/client/build/index.html'));
+  });
 }
 
 server.applyMiddleware({
