@@ -223,18 +223,25 @@ const resolvers = {
       return hash;
     },
     createGame: (parent, args, context, info) => {
-      const joinCode = `000${Math.floor(Math.random() * 10000)}`.slice(-4);
-      const hash = crypto.randomBytes(32).toString('hex');
-      const players = JSON.stringify([args.userHash]);
-      db.query(
-        'INSERT INTO games (hash, joinCode, players, stage) VALUES (?, ?, ?, 1)',
-        [hash, joinCode, players],
-        () => {
-          gameCache[hash] = gameModel(hash, players, GAME_STAGE.pregame);
-        }
-      );
-
-      return hash;
+      return new Promise((resolve) => {
+        console.log('creating game');
+        const joinCode = `000${Math.floor(Math.random() * 10000)}`.slice(-4);
+        const hash = crypto.randomBytes(32).toString('hex');
+        const players = JSON.stringify([args.userHash]);
+        db.query(
+          'INSERT INTO games (hash, joinCode, players, stage) VALUES (?, ?, ?, 1)',
+          [hash, joinCode, players],
+          (error) => {
+            console.log('error?', error);
+            gameCache[hash] = gameModel(
+              hash,
+              [args.userHash],
+              GAME_STAGE.pregame
+            );
+            return resolve(hash);
+          }
+        );
+      });
     },
     joinGame: (parent, args, context, info) => {
       return new Promise(async (resolve, reject) => {

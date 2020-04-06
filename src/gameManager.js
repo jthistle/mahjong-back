@@ -20,8 +20,11 @@ function gameManager() {
     while (true) {
       const start = Date.now();
 
-      for (hash in gameCache) {
+      Object.keys(gameCache).forEach((hash) => {
         const game = gameCache[hash];
+        if (!game) {
+          return;
+        }
 
         if (game.gameStage() === GAME_STAGE.pregame) {
           if (game.playerCount() === config.maxPlayers && game.playersReady()) {
@@ -37,7 +40,7 @@ function gameManager() {
         ) {
           game.nextTurn();
         }
-      }
+      });
 
       await new Promise((resolve) =>
         setTimeout(resolve, MIN_TIMEOUT - (Date.now() - start))

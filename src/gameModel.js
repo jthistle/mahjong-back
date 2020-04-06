@@ -97,7 +97,9 @@ function game(_hash, _players, _gameStage, _events) {
   /**
    * Returns whether all players are ready for a new round to begin.
    */
-  const playersReady = () => readyPlayers.every((ready) => ready);
+  const playersReady = () => {
+    return readyPlayers.every((ready) => ready);
+  };
 
   /**
    * Tile comparison functions.
@@ -788,7 +790,10 @@ function game(_hash, _players, _gameStage, _events) {
     /* Methods relating to players */
     playerId,
     addPlayer: (hash) => {
-      players.length < config.maxPlayers && players.push(hash);
+      if (players.length < config.maxPlayers) {
+        players.push(hash);
+        readyPlayers.push(false);
+      }
     },
     playerCount: () => players.length,
     playerSetReady,
