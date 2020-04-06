@@ -6,6 +6,7 @@
   "author": "James Thistlewood",
   "license": "GPL-3.0",
   "scripts": {
+    "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "prettify": "prettier --write \"src/**/*.js\""
   },
