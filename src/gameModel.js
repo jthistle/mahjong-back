@@ -586,7 +586,7 @@ function game(_hash, _players, _gameStage, _events) {
           tileSet: declaredSet,
         });
 
-        if (event.tileSet.length === 4) {
+        if (tileSet.length === 4) {
           /* Kong, player must pick up again before discarding */
           startTurn(playerInd);
         } else {
