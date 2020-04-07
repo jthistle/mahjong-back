@@ -157,6 +157,7 @@ const resolvers = {
         return {
           offset: args.offset,
           events: [],
+          tilesRemaining: game.tilesRemaining(),
         };
       }
 
@@ -178,6 +179,7 @@ const resolvers = {
       return {
         offset: game.lastEventId(),
         events: sanitisedEvents,
+        tilesRemaining: game.tilesRemaining(),
       };
     },
   },

@@ -817,6 +817,8 @@ function game(_hash, _players, _nicknames, _joinCode, _gameStage, _events) {
     /* Methods relating to game flow control, for use by game manager */
     newRound: wrapExternal(newRound),
     nextTurn: wrapExternal(nextTurn),
+    /* Misc methods */
+    tilesRemaining: () => wallTiles.length,
   };
 }
 

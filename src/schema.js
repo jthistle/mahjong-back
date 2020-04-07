@@ -111,6 +111,7 @@ const typeDefs = gql`
   type EventsResponse {
     offset: Int!
     events: [Event!]!
+    tilesRemaining: Int!
   }
 
   input EventInput {
