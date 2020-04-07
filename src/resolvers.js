@@ -40,6 +40,21 @@ function validateUserHash(hash) {
 }
 
 /**
+ * Performs a synchronous query.
+ */
+function syncQuery(query, params) {
+  return new Promise((resolve, reject) => {
+    db.query(query, params, (error, results) => {
+      if (error) {
+        console.error('query error');
+        return reject(error);
+      }
+      resolve(results);
+    });
+  });
+}
+
+/**
  * Custom definition of a timestamp scalar type.
  */
 const Timestamp = new GraphQLScalarType({
@@ -114,67 +129,22 @@ const resolvers = {
     },
     game: (parent, args, context, info) => {
       return new Promise((resolve) => {
-        db.query(
-          'SELECT * FROM games WHERE hash = ?',
-          [args.gameHash],
-          async function (error, results) {
-            if (results.length !== 1) {
-              return resolve(null);
-            }
+        const game = gameCache[args.gameHash];
+        if (!game) {
+          return resolve(null);
+        }
 
-            const game = results[0];
-            game.players = JSON.parse(game.players);
+        const nicknames = game.nicknames();
+        const joinCode = game.joinCode();
+        const myPosition = game.playerId(args.userHash);
+        const stage = game.gameStage();
 
-            hashes = padWithStrings(game.players, '', 4);
-            const players = await new Promise((resolvePlayers) => {
-              // TODO: make this dependent on maxPlayers instead of being hardcoded
-              db.query(
-                'SELECT hash, nickname FROM users WHERE hash IN (?, ?, ?, ?)',
-                hashes,
-                function (error, results) {
-                  return resolvePlayers(results);
-                }
-              );
-            });
-
-            let myPosition = hashes.indexOf(args.userHash);
-            if (myPosition === -1) {
-              myPosition = null;
-            }
-
-            const nicknames = [];
-            game.players.forEach((hash) => {
-              let nickname;
-              for (let i = 0; i < players.length; i++) {
-                if (players[i].hash === hash) {
-                  nickname = players[i].nickname;
-                  break;
-                }
-              }
-              nicknames.push(nickname);
-            });
-
-            let stage;
-            switch (game.stage) {
-              case 0:
-                stage = 'FINISHED';
-                break;
-              case 1:
-                stage = 'PREGAME';
-                break;
-              case 2:
-                stage = 'PLAY';
-                break;
-            }
-
-            return resolve({
-              nicknames,
-              stage,
-              myPosition,
-              joinCode: game.joinCode,
-            });
-          }
-        );
+        return resolve({
+          nicknames,
+          stage,
+          myPosition,
+          joinCode,
+        });
       });
     },
     events: (parent, args, context, info) => {
@@ -223,19 +193,31 @@ const resolvers = {
       return hash;
     },
     createGame: (parent, args, context, info) => {
-      return new Promise((resolve) => {
-        console.log('creating game');
+      return new Promise(async (resolve) => {
+        console.log('Creating new game');
         const joinCode = `000${Math.floor(Math.random() * 10000)}`.slice(-4);
         const hash = crypto.randomBytes(32).toString('hex');
         const players = JSON.stringify([args.userHash]);
+        const queryData = await syncQuery(
+          'SELECT nickname FROM users WHERE hash = ?',
+          [args.userHash]
+        );
+        const playerData = queryData[0];
+
+        if (!playerData) {
+          return resolve(null);
+        }
+
         db.query(
-          'INSERT INTO games (hash, joinCode, players, stage) VALUES (?, ?, ?, 1)',
-          [hash, joinCode, players],
+          'INSERT INTO games (hash, joinCode, players, nicknames, stage) VALUES (?, ?, ?, ?, 1)',
+          [hash, joinCode, players, JSON.stringify([playerData.nickname])],
           (error) => {
             console.log('error?', error);
             gameCache[hash] = gameModel(
               hash,
               [args.userHash],
+              [playerData.nickname],
+              joinCode,
               GAME_STAGE.pregame
             );
             return resolve(hash);
@@ -245,37 +227,36 @@ const resolvers = {
     },
     joinGame: (parent, args, context, info) => {
       return new Promise(async (resolve, reject) => {
-        if (!(await validateUserHash(args.userHash))) {
+        /* Find game in game cache based on join code. */
+        let game = null;
+        for (let hash in gameCache) {
+          const g = gameCache[hash];
+          if (!g || g.gameStage() === GAME_STAGE.finished) {
+            continue;
+          }
+          if (g.joinCode() === args.gameCode) {
+            game = g;
+            break;
+          }
+        }
+
+        if (!game) {
           return resolve(null);
         }
-        db.query(
-          'SELECT hash, players FROM games WHERE joinCode = ? AND stage != 0',
-          [args.gameCode],
-          (error, results) => {
-            if (results.length !== 1) {
-              return resolve(null);
-            }
 
-            /* Add player to list of players */
-            const game = results[0];
-            const players = JSON.parse(game.players);
-            if (players.length >= config.maxPlayers) {
-              /* TODO allow join to spectate? */
-              return resolve(null);
-            } else if (!players.includes(args.userHash)) {
-              players.push(args.userHash);
-              db.query(
-                'UPDATE games SET players = ? WHERE hash = ?',
-                [JSON.stringify(players), game.hash],
-                () => {
-                  gameCache[game.hash].addPlayer(args.userHash);
-                }
-              );
-            }
+        const gameHash = game.hash();
 
-            return resolve(game.hash);
-          }
+        const queryData = await syncQuery(
+          'SELECT nickname FROM users WHERE hash = ?',
+          [args.userHash]
         );
+        const playerData = queryData[0];
+        if (!playerData) {
+          return resolve(null);
+        }
+
+        const res = game.addPlayer(args.userHash, playerData.nickname);
+        return resolve(res ? gameHash : null);
       });
     },
     setReady: (parent, args, context, info) => {

@@ -5,16 +5,6 @@ const { TURN_STATE, GAME_STAGE } = require('./const.js');
 
 const MIN_TIMEOUT = 500; /* ms */
 
-/**
-function syncQuery(query, params) {
-  return new Promise((resolve) => {
-    db.query(query, params, (error, results) => {
-      resolve(results);
-    });
-  });
-}
-*/
-
 function gameManager() {
   const run = async () => {
     while (true) {

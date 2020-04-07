@@ -10,7 +10,7 @@ const stageMap = {
 };
 
 db.query(
-  'SELECT hash, events, players, stage FROM games WHERE stage != 0',
+  'SELECT hash, events, players, nicknames, stage, joinCode FROM games WHERE stage != 0',
   (error, results) => {
     if (error) {
       console.error('error: ', error);
@@ -20,6 +20,8 @@ db.query(
       games[game.hash] = gameModel(
         game.hash,
         JSON.parse(game.players),
+        JSON.parse(game.nicknames),
+        game.joinCode,
         stageMap[game.stage],
         events
       );

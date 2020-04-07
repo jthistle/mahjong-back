@@ -53,7 +53,7 @@ function moveTile(src, dest, tile) {
  * writing events to the database, validating user events, and starting new
  * turns and games.
  */
-function game(_hash, _players, _gameStage, _events) {
+function game(_hash, _players, _nicknames, _joinCode, _gameStage, _events) {
   const hash = _hash;
   let locked = false;
   let events = _events ? cloneDeep(_events) : [];
@@ -63,6 +63,8 @@ function game(_hash, _players, _gameStage, _events) {
   let turnState = null;
   let gameStage = _gameStage;
   const players = cloneDeep(_players);
+  const nicknames = cloneDeep(_nicknames);
+  const joinCode = _joinCode;
   let readyPlayers = Array(players.length).fill(false);
   let wallTiles = [];
   let hiddenTiles = [];
@@ -70,6 +72,16 @@ function game(_hash, _players, _gameStage, _events) {
   let declaredTiles = [];
 
   const playerId = (hash) => players.indexOf(hash);
+
+  const addPlayer = (hash, nickname) => {
+    if (players.length < config.maxPlayers) {
+      players.push(hash);
+      nicknames.push(nickname);
+      readyPlayers.push(false);
+      return true;
+    }
+    return false;
+  };
 
   /**
    * Let a player leave the game, by ending it.
@@ -256,8 +268,14 @@ function game(_hash, _players, _gameStage, _events) {
    */
   const updateDatabase = (callback) => {
     db.query(
-      'UPDATE games SET stage = ?, events = ? WHERE hash = ?',
-      [GAME_STAGE_TO_INT[gameStage], JSON.stringify(events), hash],
+      'UPDATE games SET stage = ?, players = ?, nicknames = ?, events = ? WHERE hash = ?',
+      [
+        GAME_STAGE_TO_INT[gameStage],
+        JSON.stringify(players),
+        JSON.stringify(nicknames),
+        JSON.stringify(events),
+        hash,
+      ],
       (error, results) => {
         locked = false;
         if (callback) callback();
@@ -782,6 +800,7 @@ function game(_hash, _players, _gameStage, _events) {
     locked: () => locked,
     turnState: () => turnState,
     gameStage: () => gameStage,
+    joinCode: () => joinCode,
     /* Methods relating to events */
     forEachEvent: (callback) => events.forEach(callback),
     lastEventId: () => lastEventId,
@@ -789,16 +808,12 @@ function game(_hash, _players, _gameStage, _events) {
     userEvent: wrapExternal(userEvent),
     /* Methods relating to players */
     playerId,
-    addPlayer: (hash) => {
-      if (players.length < config.maxPlayers) {
-        players.push(hash);
-        readyPlayers.push(false);
-      }
-    },
+    addPlayer: wrapExternal(addPlayer),
     playerCount: () => players.length,
     playerSetReady,
     playerLeaveGame,
     playersReady,
+    nicknames: () => cloneDeep(nicknames),
     /* Methods relating to game flow control, for use by game manager */
     newRound: wrapExternal(newRound),
     nextTurn: wrapExternal(nextTurn),
