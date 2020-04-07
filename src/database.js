@@ -1,31 +1,43 @@
 const mysql = require('mysql');
 
-var connection;
+function database() {
+  let connection;
 
-function handleSqlError(error) {
-  if (!error) return;
+  const handleSqlError = (error) => {
+    if (!error) return;
 
-  console.error(`SQL Error: ${error.code}: ${error}`);
-  if (error.code === 'PROTOCOL_CONNECTION_LOST') {
-    restartSqlConnection();
-  } else {
-    throw error;
-  }
+    console.error(`SQL Error: ${error.code}: ${error}`);
+    if (error.code === 'PROTOCOL_CONNECTION_LOST') {
+      restartSqlConnection();
+    } else {
+      throw error;
+    }
+  };
+
+  const restartSqlConnection = () => {
+    connection = mysql.createConnection({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USERNAME,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_DATABASE,
+    });
+
+    connection.on('error', handleSqlError);
+  };
+
+  const query = (...args) => {
+    connection.connect(handleSqlError);
+    connection.query(...args);
+    connection.end(handleSqlError);
+  };
+
+  restartSqlConnection();
+
+  return {
+    query,
+  };
 }
 
-function restartSqlConnection() {
-  connection = mysql.createConnection({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USERNAME,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_DATABASE,
-  });
+const db = database();
 
-  connection.connect(handleSqlError);
-
-  connection.on('error', handleSqlError);
-}
-
-restartSqlConnection();
-
-module.exports = connection;
+module.exports = db;
