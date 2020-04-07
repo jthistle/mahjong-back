@@ -32,6 +32,15 @@ server.applyMiddleware({
 
 app.use('/voyager', voyagerMiddleware({ endpointUrl: '/graphql' }));
 
+/* declare last as a catchall */
+app.get('/*', function (req, res) {
+  res.sendFile(path.join(__dirname, 'client/index.html'), function (err) {
+    if (err) {
+      res.status(500).send(err);
+    }
+  });
+});
+
 const port = process.env.PORT || 4000;
 app.listen({ port }, () => console.log(`Server ready on port ${port}!`));
 
