@@ -229,6 +229,16 @@ function game(_hash, _players, _nicknames, _joinCode, _gameStage, _events) {
         });
         declaredTiles[event.player].push(tempTileSet);
         break;
+      case EVENT.augmentDeclared:
+        const decl = declaredTiles[event.player];
+        for (let i = 0; i < decl.length; ++i) {
+          if (!areSameTile(event.tile, decl[i][0], decl[i][1])) {
+            continue;
+          }
+          moveTile(hiddenTiles[player], decl[i]);
+          break;
+        }
+        break;
       case EVENT.roundEnd:
         /* Return to pregame once a round has ended */
         gameStage = GAME_STAGE.pregame;
@@ -348,14 +358,17 @@ function game(_hash, _players, _nicknames, _joinCode, _gameStage, _events) {
       return;
     }
 
+    const tile = wallTiles[0];
     addEvent({
       type: EVENT.pickupWall,
       time: Date.now(),
       player,
-      tile: wallTiles[0],
+      tile,
     });
 
-    checkKongs(player);
+    if (!checkDeclaredPung(player, tile)) {
+      checkKongs(player);
+    }
   };
 
   /**
@@ -388,6 +401,31 @@ function game(_hash, _players, _nicknames, _joinCode, _gameStage, _events) {
     declareCombo(Array(4).fill({ ...kongs[ind] }), player, true);
 
     doPickup(player);
+  };
+
+  /**
+   * Check for a declared pung in the tile specified and make it a kong if it
+   * exists. Returns whether it was successful.
+   */
+  const checkDeclaredPung = (player, tile) => {
+    const res = declaredTiles[player].some((tileSet) => {
+      return areSameTile(tileSet[0], tileSet[1], tile);
+    });
+
+    if (!res) {
+      return false;
+    }
+
+    addEvent({
+      type: EVENT.augmentDeclared,
+      time: Date.now(),
+      player,
+      tile: { ...tile },
+    });
+
+    doPickup(player);
+
+    return true;
   };
 
   /**

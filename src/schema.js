@@ -91,6 +91,8 @@ const typeDefs = gql`
     DISCARD
     "A combo is declared, uses tileSet, player"
     DECLARE
+    "Add a tile to an already declared combo, uses player, tile"
+    AUGMENT_DECLARED
     "A player goes mahjong, uses player"
     MAHJONG
     "The round has ended"

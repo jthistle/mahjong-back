@@ -14,6 +14,7 @@ const EVENT = {
   pickupTable: 'PICKUP_TABLE',
   discard: 'DISCARD',
   declare: 'DECLARE',
+  augmentDeclared: 'AUGMENT_DECLARED',
   mahjong: 'MAHJONG',
   roundEnd: 'ROUND_END',
   gameEnd: 'GAME_END',
