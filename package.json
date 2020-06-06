@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "apollo-server": "^2.11.0",
-    "apollo-server-express": "^2.11.0",
+    "apollo-server-express": "^2.14.2",
     "clone-deep": "^4.0.1",
     "cors": "^2.8.5",
     "dotenv": "^8.2.0",
